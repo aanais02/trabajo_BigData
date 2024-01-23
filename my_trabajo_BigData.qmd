@@ -1,0 +1,584 @@
+---
+title: "De Nueva York a Tokio: Analizando los Logros en las Six Majors y Más Allá"
+description: |
+  Explorando los mayores hitos en maratones, desde los Top 100 mundiales hasta las Six Majors y la icónica Maratón de Boston.
+author:
+  - name: Anaïs Rosschaert Loyson
+    affiliation: Universitat de València
+    affiliation-url: https://www.uv.es
+date: 2024-01-24                           #--
+categories: [trabajo BigData, maraton, Six Majors, Top 100]   #--
+image: "./imagenes/World-Marathon-Majors.jpg"
+title-block-banner: true #- {true, false, "green","#AA0000"}
+title-block-banner-color: "#23445e" 
+toc-depth: 3
+smooth-scroll: true
+format: 
+  html:
+    #backgroundcolor: "#F1F3F4"
+    #embed-resources: true
+    link-external-newwindow: true
+    #css: ./assets/my_css_file.css   #- CUIDADO!!!!
+code-tools: true
+code-link: true
+---
+
+![Six Majors](https://thelastlap.run/wp-content/uploads/2022/11/Majors.jpg){width=75%}
+
+
+## Introducción 
+
+El maratón, con una distancia oficial de 42.195 metros, se destaca como una de las pruebas más emblemáticas y reconocidas dentro del atletismo. En el universo de las maratones, destacan las ["Six Majors"](https://www.worldmarathonmajors.com/), una élite de seis maratones considerados los más prestigiosos del mundo. Esta selección incluye las ciudades de Boston, Nueva York, Chicago, Berlín, Londres y Tokio.
+
+En este trabajo, nos adentramos en el análisis de los 100 mejores tiempos oficiales en los que se ha completado la distancia del maratón. Exploraremos cómo se distribuyen las nacionalidades de los atletas que ocupan este destacado ranking y qué maratones son más frecuentes en este exclusivo grupo. Además, nos sumergiremos en el seno de las "Six Majors", examinando el tiempo medio y los cinco atletas que más veces han alcanzado la victoria en alguna de las “Majors”. Finalmente, dirigiremos nuestra atención hacia el Maratón de Boston, explorando la evolución del ritmo medio en el cual los ganadores han completado cada edición a lo largo del tiempo. Este análisis detallado permitirá comprender las dinámicas cambiantes y estrategias adoptadas por los corredores en uno de los eventos más antiguos y emblemáticos del atletismo mundial.
+
+### Definiciones
+
+- **Ritmo medio en carrera**: Velocidad promedio a la cual un corredor completa la distancia durante todo el evento. Este indicador se calcula dividiendo la distancia total de la carrera por el tiempo total empleado.
+
+- **Top 100 mejores tiempos en maratón**: Selección de los 100 mejores tiempos (oficiales) registrados en la historia de esta disciplina atlética. Estos tiempos destacados representan el rendimiento más excepcional y rápido entre todos los corredores, lo que convierte a este grupo en una referencia significativa para evaluar la élite del mundo del maratón.
+
+- **Six Majors**: Conjunto de las seis maratones más prestigiosas a nivel mundial. Se incluyen los eventos celebrados en las ciudades de Boston, Nueva York, Chicago, Berlín, Londres y Tokio. 
+
+## Datos
+
+Para este estudio, se ha recopilado información de la página web de [World Athletics](https://worldathletics.org/) y de [Kaggle](https://www.kaggle.com/). El enfoque principal se centra en analizar datos relacionados con los tiempos de llegada de destacados atletas en una de las pruebas más desafiantes: el maratón.
+
+Con el fin de garantizar la integridad de los datos y evitar posibles complicaciones derivadas de modificaciones, la información extraída de la página web de World Athletics se descargó el 17 de enero de 2024. Este proceso se llevó a cabo utilizando funciones como `read_html` y `html_table`, y los datos se han gestionado desde los archivos generados en esa fecha específica.
+
+En términos de limpieza y manipulación de datos, se destacan las consideraciones especiales aplicadas a variables como el tiempo en meta y el ritmo medio, que se presentaban en formato sexagesimal. Para convertir estas variables a “numeric” y así poder realizar este análisis, se han considerado estas dos variables como tiempo en segundos. Además, se ha llevado a cabo una homogeneización del nombre y formato de las variables. 
+
+```{r}
+#Librerías
+
+library(tidyverse)
+library(rio)
+library(dplyr)
+library(rvest)
+library(stringr)
+library(knitr)
+library(kableExtra)
+library("rnaturalearth")
+library("rnaturalearthdata")
+library(ggplot2)
+library(RColorBrewer)
+library(ggthemes)
+library(plotly)
+
+#Cargando todos los dfs en el global
+
+data_boston_fem <- rio::import(here::here("datos", "Womens_Boston_Marathon_Winners.csv"))
+data_boston_masc <- rio::import(here::here("datos", "Mens_Boston_Marathon_Winners.csv"))
+data_majors <- rio::import(here::here("datos", "world_marathon_majors.csv"))
+
+data_records_maraton_masc <- rio::import(here::here("datos", "Records_Maraton_Masc.csv"))
+data_records_maraton_fem <- rio::import(here::here("datos", "Records_Maraton_Fem.csv"))
+
+data_records_fem <- rio::import(here::here("datos", "Records_Fem.csv"))
+data_records_masc <- rio::import(here::here("datos", "Records_Masc.csv"))
+
+#Limpiando y preparando datos
+
+#La parte clave de la preparación de datos es conseguir crear una nueva columna donde nos indique la velocidad media de cada corredor en minutos y segundos por km (mm:ss/km). Para ello hay que tener en cuenta la particularidad del sistema sexagesimal a la hora de crear esta nueva variable.
+
+#Además homogeneizaremos el nombre de las variables y eliminaremos aquellas que no sean relevantes
+
+#Boston femenino
+
+data_boston_fem <- data_boston_fem %>%
+  select(-"Distance (Miles)") %>%
+  rename(Athlete = "Winner", Nationality = "Country", Distance = "Distance (KM)") %>%
+  mutate(Time_In_Seconds = as.numeric(ifelse(grepl(":", as.character(Time)), 
+                                             sapply(strsplit(as.character(Time), ":"), 
+                                                    function(x) sum(as.numeric(x) * c(3600, 60, 1))),
+                                             NA)),
+         Pace_Seconds = Time_In_Seconds / Distance,
+         Pace = ifelse(is.finite(Pace_Seconds), sprintf("%02d:%02d", as.integer(floor(Pace_Seconds / 60)), as.integer(Pace_Seconds %% 60)), NA),
+         .after = "Distance") %>%
+  slice(-55) %>%
+  relocate(Pace, .after = "Distance") 
+
+colnames(data_boston_fem) <- tolower(colnames(data_boston_fem))
+
+#data_boston_fem <- data_boston_fem %>%
+  #select(-c("time_in_seconds", "pace_seconds"))
+
+#Boston fmasculino
+
+data_boston_masc <- data_boston_masc %>%
+  select(-"Distance (Miles)") %>%
+  rename(Athlete = "Winner", Nationality = "Country", Distance = "Distance (KM)") %>%
+  mutate(Time_In_Seconds = as.numeric(ifelse(grepl(":", as.character(Time)), 
+                                           sapply(strsplit(as.character(Time), ":"), 
+                                                  function(x) sum(as.numeric(x) * c(3600, 60, 1))),
+                                           NA)),
+         Pace_Seconds = Time_In_Seconds / Distance,
+         Pace = ifelse(is.finite(Pace_Seconds), sprintf("%02d:%02d", as.integer(floor(Pace_Seconds / 60)), as.integer(Pace_Seconds %% 60)), NA),
+         .after = "Distance") %>%
+  slice(-124) %>%
+  relocate(Pace, .after = "Distance") 
+
+colnames(data_boston_masc) <- tolower(colnames(data_boston_masc)) 
+
+#data_boston_masc <- data_boston_masc %>%
+  #select(-c("time_in_seconds", "pace_seconds"))
+
+
+#Six majors (ganadores/as de cada edición)
+
+data_majors <- data_majors %>%
+  rename(athlete = "winner", nationality = "country") %>%
+  mutate(distance = 42.195) %>%
+  mutate(time_in_seconds = as.numeric(ifelse(grepl(":", as.character(time)), 
+                                             sapply(strsplit(as.character(time), ":"), 
+                                                    function(x) sum(as.numeric(x) * c(3600, 60, 1))),
+                                             NA)),
+         pace_seconds = time_in_seconds / distance,
+         pace = ifelse(is.finite(pace_seconds), sprintf("%02d:%02d", as.integer(floor(pace_seconds / 60)), as.integer(pace_seconds %% 60)), NA),
+         .after = "distance") %>%
+  relocate(pace, .after = "distance")
+
+#data_majors <- data_majors %>%
+  #select(-c("time_in_seconds", "pace_seconds"))
+
+
+#Records maratones masculino
+
+
+data_records_maraton_masc <- data_records_maraton_masc %>%
+  select(-c(Rank, WIND, Pos, V8, "Results Score")) %>%
+  rename(nationality = Nat, date_of_birth = DOB, time = Mark, marathon = Venue) %>%
+  setNames(tolower(names(.))) %>%
+  relocate(date, nationality, time, date_of_birth) %>%
+  separate(competitor, into = c("name", "athlete"), sep = " ", remove = FALSE) %>%
+  relocate(name, athlete, .after = "competitor") %>%
+  mutate(distance = 42.195,
+         time_in_seconds = as.numeric(ifelse(grepl(":", as.character(time)), 
+                                             sapply(strsplit(as.character(time), ":"), 
+                                                    function(x) sum(as.numeric(x) * c(3600, 60, 1))),
+                                             NA)),
+         pace_seconds = time_in_seconds / distance,
+         pace = ifelse(is.finite(pace_seconds), sprintf("%02d:%02d", as.integer(floor(pace_seconds / 60)), as.integer(pace_seconds %% 60)), NA),
+         .after = "time") %>%
+  relocate(pace, .after = "time") %>%
+  select(-c("time_in_seconds", "pace_seconds"))
+
+#Vamos a cambiar las fechas para que sean consideradas como "date" en vez de character
+
+data_records_maraton_masc <- data_records_maraton_masc %>%
+  separate(date, into = c("day", "month", "year"), sep = " ") %>%
+  separate(date_of_birth, into = c("day", "month", "year_of_birth"), sep = " ") %>%
+  select(-c(day, month)) %>%
+  mutate(year = as.numeric(year),
+         year_of_birth = as.numeric(year_of_birth))
+
+
+#Records maratones femenino
+
+data_records_maraton_fem <- data_records_maraton_fem %>%
+  select(-c(Rank, WIND, Pos, V8, "Results Score")) %>%
+  rename(nationality = Nat, date_of_birth = DOB, time = Mark, marathon = Venue) %>%
+  setNames(tolower(names(.))) %>%
+  relocate(date, nationality, time, date_of_birth) %>%
+  separate(competitor, into = c("name", "athlete"), sep = " ", remove = FALSE) %>%
+  relocate(name, athlete, .after = "competitor") %>%
+  mutate(distance = 42.195,
+         time_in_seconds = as.numeric(ifelse(grepl(":", as.character(time)), 
+                                             sapply(strsplit(as.character(time), ":"), 
+                                                    function(x) sum(as.numeric(x) * c(3600, 60, 1))),
+                                             NA)),
+         pace_seconds = time_in_seconds / distance,
+         pace = ifelse(is.finite(pace_seconds), sprintf("%02d:%02d", as.integer(floor(pace_seconds / 60)), as.integer(pace_seconds %% 60)), NA),
+         .after = "time") %>%
+  relocate(pace, .after = "time") %>%
+  select(-c("time_in_seconds", "pace_seconds"))
+
+#Vamos a cambiar las fechas para que sean consideradas como "date" en vez de character
+
+data_records_maraton_fem <- data_records_maraton_fem %>%
+  separate(date, into = c("day", "month", "year"), sep = " ") %>%
+  separate(date_of_birth, into = c("day", "month", "year_of_birth"), sep = " ") %>%
+  select(-c(day, month)) %>%
+  mutate(year = as.numeric(year),
+         year_of_birth = as.numeric(year_of_birth))
+  
+```
+
+
+## 1) Analizando los mejores tiempos de los maratonianos
+### Top 100 mejores tiempos (oficiales) en maratón
+
+```{r}
+#Ranking top 100----
+
+
+# En primer lugar, arreglo los datos para la tabla. Selecciono las variables que quiero representar
+top100_masc <- head(data_records_maraton_masc, 100) %>%
+  mutate(position = c(1:100)) %>%
+  select(position, athlete, nationality, time, marathon) %>%
+  setNames(toupper(names(.)))
+
+
+# Creamos la tabla del top  mejores tiempos masculinos
+
+tabla_top100_masc <- top100_masc %>%
+  kable("html", align = "l", caption = "TOP 100 MEJORES TIEMPOS DE MARATÓN MASCULINO") %>%
+  kable_styling(full_width = TRUE, position = "center", bootstrap_options = c("striped", "hover", "condensed"), htmltable_class = "lightable-material") %>%
+  row_spec(row = 0, extra_css = "text-align: center; text-transform: uppercase; font-size: 18px; font-weight: bold;") %>%
+  footnote(general = "Elaboración propia a partir de datos extraídos de World Athletics", general_title = " ", footnote_as_chunk = T) %>%
+  scroll_box(width = "100%", height = "375px")
+
+tabla_top100_masc
+```
+
+
+Este análisis de los 100 mejores tiempos revela la constante evolución y la proximidad de los atletas a fronteras aparentemente inalcanzables. 
+
+En la categoría masculina, la proximidad a la mítica barrera de las 2 horas se ha vuelto más palpable con actuaciones notables. Kelvin Kiptum, con su sorprendente tiempo de 2:00:35 en Chicago, ha acariciado este límite tan simbólico.
+
+En este contexto, la figura emblemática de [Eliud Kipchoge](https://olympics.com/es/atletas/eliud-kipchoge) no puede pasarse por alto. Aunque actualmente ocupa la segunda posición con un tiempo de 2:01:09 en Berlín, su legado es incuestionable dado que, durante 131 semanas, Kipchoge ostentó el récord. Cabe mencionar que Kipchoge, batió el "muro" de las 2 horas con un tiempo de 1:59:40 en el maratón de Viena en 2019. Sin embargo, esta marca no se considera oficial dado que el atleta contó con la asistencia de 41 "pacers" que se turnaban para marcar el ritmo necesario, planteando ciertas controversias en torno a su estatus.
+
+```{r}
+# Y ahora seguiremos los mismos pasos para la categoría femenina
+
+top100_fem <- head(data_records_maraton_fem, 100) %>%
+  mutate(position = c(1:100)) %>%
+  select(position, athlete, nationality, time, marathon) %>%
+  setNames(toupper(names(.)))
+
+tabla_top100_fem <- top100_fem %>%
+  kable("html", align = "l", caption = "TOP 100 MEJORES TIEMPOS DE MARATÓN FEMENINO") %>%
+  kable_styling(full_width = TRUE, position = "center", bootstrap_options = c("striped", "hover", "condensed"), htmltable_class = "lightable-material") %>%
+  row_spec(row = 0, extra_css = "text-align: center; text-transform: uppercase; font-size: 18px; font-weight: bold; background-color: #fbfee9;") %>%
+  footnote(general = "Elaboración propia a partir de datos extraídos de World Athletics", general_title = " ", footnote_as_chunk = T) %>%
+  scroll_box(width = "100%", height = "375px")
+
+tabla_top100_fem
+
+```
+
+
+En la categoría femenina, el panorama no es menos emocionante. Tigst Assefa lidera el ranking con un tiempo formidable de 2:11:53 en Berlín. Las atletas Sifan Hassan, Brigid Kosgei, Ruth Chepngetich y Amane Beriso Shankule completan el top 5, evidenciando la diversidad de talentos y la competitividad en la élite del maratón femenino.
+
+### Nacionalidades de los mejores maratonianos
+
+```{r}
+#------Mapa coropletas-----
+
+data_records_maraton_masc <- data_records_maraton_masc %>%
+  mutate(gender = "Masc")
+
+data_records_maraton_fem <- data_records_maraton_fem %>%
+  mutate(gender = "Fem")
+
+data_records_maraton <- full_join(data_records_maraton_masc, data_records_maraton_fem)
+
+#Obtenemos el mapa y seleccionamos las dos variables que harán falta para unir los dfs y crear el mapa.
+
+world <- rnaturalearth::ne_countries(scale = "medium", returnclass = "sf")
+world <- world %>% filter(subregion != "Antarctica") %>% filter(admin != "Greenland")
+world <- world %>% select(iso_a3, geometry)
+
+
+#Manipulamos los datos. En este caso, representaremos en un mapa de coropletas las nacionalidades que están entre el top 100 mejores tiempos 
+
+data_mapa<- data_records_maraton%>% group_by(nationality) %>%
+  summarize(NN = n())
+
+#Unimos los dfs y creamos los quintiles
+
+df_mapa<- full_join(data_mapa, world, by = c("nationality" = "iso_a3") ) 
+
+df_mapa <- df_mapa %>% mutate(nacionalidades_5 = ntile(NN, 5))  
+df_mapa$nacionalidades_5 <- as.factor(df_mapa$nacionalidades_5)
+
+
+#Creamos el mapa de coropletas
+
+p1 <- ggplot(df_mapa) +
+  geom_sf(aes(geometry = geometry, fill = nacionalidades_5)) +
+  scale_fill_brewer(palette = "Greens", name = NULL, labels = c("1er quintil", "2do quintil", "3er quintil", "4to quintil", "5to quintil")) + 
+  theme_fivethirtyeight() +
+  labs(title = "DISTRIBUCIÓN NACIONALIDADES TOP 100", subtitle = "(masculino y femenino)" , caption = "Elaboración propia a partir de datos extraídos de World Athletics") + 
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.ticks = element_blank()) +
+  scale_y_continuous(breaks = NULL) + 
+  scale_x_continuous(breaks = NULL) 
+
+p1
+
+```
+
+
+En el grupo de los 100 mejores tiempos oficiales de maratón, se observa una gran variedad de nacionalidades. Para la elaboración del siguiente mapa, se han fusionado ambos rankings.
+
+Este mapa coroplético ofrece una visión de la distribución geográfica de las nacionalidades de los mejores maratonistas. Destaca claramente el dominio incuestionable de Kenia y Etiopía, que lideran con contundencia este ranking. Detrás de este dúo imponente, otras naciones también han dejado su huella en este selecto grupo. Japón se presenta como un contendiente fuerte mientras que Estados Unidos también ha logrado asegurar un lugar notable en este exclusivo ranking.
+
+Además, otras naciones como Brasil, China, Israel, Turquía, Holanda, Alemania y Uganda, entre otras, representan la diversidad global de talento en el mundo del maratón. Aunque estas naciones pueden tener menos representantes, su presencia destaca la universalidad del atletismo y la capacidad de atletas de diversas culturas para competir a nivel élite.
+
+### Maratones destacadas en el top 100
+
+```{r}
+#Ciudades que más aparecen entre el top 100 (oficial)-----
+
+data_ciudades_records_maraton_masc <- data_records_maraton_masc %>%
+  group_by(marathon) %>%
+  summarize(NN = n()) %>%
+  ungroup() %>%
+  slice_max(n = 3, NN) %>%
+  arrange(desc(NN))
+
+data_ciudades_records_maraton_fem <- data_records_maraton_fem %>%
+  group_by(marathon) %>%
+  summarize(NN = n()) %>%
+  ungroup() %>%
+  slice_max(n = 3, NN) %>%
+  arrange(desc(NN))
+
+
+
+
+# Ordenar data_ciudades_records_maraton_masc de mayor a menor NN
+data_ciudades_records_maraton_masc <- data_ciudades_records_maraton_masc %>%
+  mutate(marathon = factor(marathon, levels = marathon[order(NN, decreasing = TRUE)])) %>% rename("Apariciones" = NN)
+
+data_ciudades_records_maraton_fem <- data_ciudades_records_maraton_fem %>%
+  mutate(marathon = factor(marathon, levels = marathon[order(NN, decreasing = TRUE)]))  %>% rename("Apariciones" = NN)
+
+
+data_ciudades_records_maraton <- bind_rows(
+  mutate(data_ciudades_records_maraton_masc, genero = "Masculino"),
+  mutate(data_ciudades_records_maraton_fem, genero = "Femenino")
+)
+
+# Gráfico combinado
+
+colores <- c("Masculino" = "#FBFF88", "Femenino" = "lavender")
+
+
+p_combined <- ggplot(data_ciudades_records_maraton, aes(x = marathon, y = Apariciones)) +
+  geom_bar(stat = "identity", aes(fill = genero)) + 
+  scale_fill_manual(values = colores) + 
+  labs(title = "MARATONES CON MÁS APARICIONES EN EL TOP 100",
+       x = "Maratón",
+       y = "Número de apariciones en el ranking") +
+  theme_minimal() +
+  facet_wrap(~ genero, scales = "free_y") + 
+  theme(legend.position = "none")
+
+
+
+
+p_combined_plotly <- p_combined %>%
+  ggplotly(tooltip = c("marathon", "Apariciones", "genero"))
+
+p_combined_plotly
+```
+
+
+Adentrándonos en el análisis detallado de los 100 mejores tiempos oficiales de maratón, exploraremos de cerca los tres maratones que más veces han acogido a los ganadores de sus respectivas ediciones. 
+
+En la categoría masculina, resaltan con notable presencia las emblemáticas maratones de Berlín, Dubái y Valencia, acumulando 19, 16 y 13 apariciones respectivamente en el selecto grupo de los 100 mejores tiempos oficiales de maratón. En el ámbito femenino, se repiten las mismas ciudades, aunque en distinto orden. Valencia, Berlín y Dubái acumulan 17, 16 y 10 menciones respectivamente. Estas ciudades han logrado forjar su lugar en el calendario mundial del maratón, atrayendo a atletas élite y entusiastas por igual. Esta selección de maratones como protagonistas en el ranking subraya la trascendencia de elementos geográficos, climáticos y organizativos en la excelencia de los atletas de élite en el escenario global del maratón.
+
+
+## 2) Las Six Majors
+
+Las “Six Majors” representan un prestigioso conjunto de seis maratones internacionales de renombre en el mundo del atletismo. Originalmente, esta serie (por aquel entonces conocida como las “Five Majors”) incluía los maratones de Boston, Nueva York, Chicago, Berlín y Londres. Sin embargo, en 2013, la incorporación del Maratón de Tokio ha transformado el conjunto en las “Six Majors”. Existe cierta especulación acerca de la posible inclusión de la séptima “Major”. Muchos reclaman la incorporación del maratón de Valencia como séptima “Major”, no obstante, algunas fuentes sugieren que Sídney podría ser la próxima incorporación.
+
+### La "Major" más veloz
+
+```{r}
+#La más rápida de las six majors------
+
+#Versión masculina
+fastest_major_masc <- data_majors %>% 
+  filter(gender == "Male") %>%
+  group_by(marathon)%>%
+  summarise(media_tiempo_total = mean(time_in_seconds)) %>%
+  mutate(media_tiempo_total_hms = sprintf("%02d:%02d:%02d",
+                                          as.integer(floor(media_tiempo_total / 3600)),
+                                          as.integer((media_tiempo_total %% 3600) / 60),
+                                          as.integer(media_tiempo_total %% 60))) %>%
+  arrange(media_tiempo_total) %>%
+  select(- "media_tiempo_total") %>%
+  rename(maraton = marathon, "tiempo medio del ganador" = media_tiempo_total_hms) %>%
+  mutate(Ranking = c(1:6), .before = maraton)
+
+
+tabla_fastest_major_masc <- fastest_major_masc %>%
+  kable("html", align = "c", caption = "TIEMPO MEDIO HISTÓRICO DE LOS GANADORES DE LAS SIX MAJORS (masc)") %>%
+  kable_styling(full_width = TRUE, position = "center", bootstrap_options = c("striped", "hover", "condensed"), htmltable_class = "lightable-material") %>%
+  row_spec(row = 0, extra_css = "text-align: center; text-transform: uppercase; font-size: 18px; font-weight: bold;") %>%
+  footnote(general = "Elaboración propia a partir de datos extraídos de World Athletics", general_title = " ", footnote_as_chunk = T) %>%
+  scroll_box(width = "100%", height = "425px")
+
+tabla_fastest_major_masc
+```
+
+```{r}
+#Versión femenina
+
+fastest_major_fem <- data_majors %>% 
+  filter(gender == "Female") %>%
+  group_by(marathon)%>%
+  summarise(media_tiempo_total = mean(time_in_seconds)) %>%
+  mutate(media_tiempo_total_hms = sprintf("%02d:%02d:%02d",
+                                          as.integer(floor(media_tiempo_total / 3600)),
+                                          as.integer((media_tiempo_total %% 3600) / 60),
+                                          as.integer(media_tiempo_total %% 60))) %>%
+  arrange(media_tiempo_total) %>%
+  select(- "media_tiempo_total") %>%
+  rename(maraton = marathon, "tiempo medio del ganador" = media_tiempo_total_hms) %>%
+  mutate(Ranking = c(1:6), .before = maraton) 
+
+
+tabla_fastest_major_fem <- fastest_major_fem %>%
+  kable("html", align = "c", caption = "TIEMPO MEDIO HISTÓRICO DE LOS GANADORES DE LAS SIX MAJORS (fem)") %>%
+  kable_styling(full_width = TRUE, position = "center", bootstrap_options = c("striped", "hover", "condensed"), htmltable_class = "lightable-material") %>%
+  row_spec(row = 0, extra_css = "text-align: center; text-transform: uppercase; font-size: 18px; font-weight: bold;") %>%
+  footnote(general = "Elaboración propia a partir de datos extraídos de World Athletics", general_title = " ", footnote_as_chunk = T) %>%
+  scroll_box(width = "100%", height = "425px")
+
+tabla_fastest_major_fem
+
+```
+
+
+En esta sección se analiza el tiempo promedio que han tardado los ganadores de cada edición de las “Six Majors” en llegar a meta. Para ello se han elaborado estas tablas, que diferencian los tiempos promedio para la categoría masculina y la categoría femenina.
+
+Teniendo en cuenta los tiempos medios de la categoría masculina, parece ser que Tokio y Londres son las más veloces con tan solo 12 segundos de diferencia entre sí. En general, el tiempo promedio de los ganadores en meta es cercano a las 2 horas, para todas las “Majors”, tan solo se observa una diferencia de unos 14 minutos entre el maratón de Tokio y el de Boston. Para el caso de las mujeres, Londres encabeza el ranking y nuevamente el maratón de Boston se encuentra en la cola. En esta categoría el diferencial entre Londres y Boston es ligeramente menor.
+
+Llama la atención que el maratón de Boston se encuentra en la cola tanto en la categoría masculina como femenina. Esto en gran medida se puede atribuir al hecho de que se trata del maratón más antiguo de las “Six Majors” y los tiempos en meta durante los primeros años elevan el promedio que se analiza en esta sección. De hecho, en la categoría masculina, se observa que el maratón de Boston tiene un promedio que supera por 10 minutos al de Nueva York. En la categoría femenina, esa diferencia es mucho menor (unos 4 minutos), probablemente porque la participación femenina es más reciente y consiguieron mejorar sus tiempos en meta en menos tiempo que los hombres. Esto puede verse en [este gráfico](#maratón-de-boston).
+
+### Maratonianos que más majors han ganado
+
+```{r}
+#Ganadores y ganadoras más repetidos----------------
+ganadores_majors <- data_majors %>%
+  group_by(athlete) %>%
+  summarise(NN = n()) %>%
+  ungroup() %>%
+  filter(NN >= 2) %>%
+  arrange(desc(NN)) %>%
+  distinct(athlete, .keep_all = TRUE) 
+
+ganadores_majors <- left_join(ganadores_majors, data_majors, by = "athlete") %>%
+  select(athlete, NN, gender, nationality) %>%
+  distinct(athlete, .keep_all = TRUE) %>%
+  rename("Majors" = NN)
+
+ganadores_majors$athlete <- iconv(ganadores_majors$athlete, from = "UTF-8", to = "UTF-8")
+ganadores_majors <- na.omit(ganadores_majors)
+
+tabla_ganadores_majors <- ganadores_majors %>%
+  kable("html", align = "l", caption = "ATLETAS QUE HAN GANADO UNA MAJOR MÁS DE UNA VEZ", escape = FALSE) %>%
+  kable_styling(full_width = TRUE, position = "center", bootstrap_options = c("striped", "hover", "condensed"), htmltable_class = "lightable-material") %>%
+  row_spec(row = 0, extra_css = "text-align: center; text-transform: uppercase; font-size: 18px; font-weight: bold;") %>%
+  footnote(general = "Elaboración propia a partir de datos extraídos de World Athletics", general_title = " ", footnote_as_chunk = TRUE)  %>%
+  scroll_box(width = "100%", height = "500px") 
+
+tabla_ganadores_majors
+
+```
+
+
+En esta sección nos centramos en aquellos atletas que han conseguido ganar más de una vez alguna de las “Six Majors”. En concreto, se muestran los cinco atletas que en más ocasiones las han ganado.
+
+La noruega Grete Waitz, con 11 “Majors” ganadas, es la atleta que encabeza este particular listado. En este ranking no se encuentra fácilmente un atleta que continúe en activo hoy en día. Esto demuestra que los maratones y las pruebas del atletismo en general se han convertido cada vez en eventos más competitivos y exigentes para los atletas.
+
+## 3) Maratón de Boston
+
+### Evolución histórica del ritmo medio de los ganadores de cada edición
+
+```{r}
+#Evol Boston mejores tiempos------------
+
+data_boston_fem <- data_boston_fem %>%
+  mutate(gender = "Fem")
+
+data_boston_masc <- data_boston_masc %>%
+  mutate(gender = "Masc")
+
+data_boston <- full_join(data_boston_fem, data_boston_masc) %>%
+  select(year, pace_seconds, pace, gender)
+
+colores <- c("Masc" = "palegreen1", "Fem" = "peachpuff1")
+
+p4 <- ggplot(data_boston, aes(x = year, y = pace_seconds, color = gender)) +
+  geom_line() +
+  scale_color_manual(values = colores) +  
+  labs(
+    title = "EVOLUCIÓN RITMOS MEDIOS DE LOS GANADORES DE LA MARATÓN DE BOSTON",
+    x = "Año",
+    y = "Ritmo medio (mm:ss/ km)",
+    color = "Género",
+    caption = "Elaboración propia a partir de datos extraídos de Kaggle"
+  ) +
+  theme_minimal(base_family = "") + 
+  theme(plot.caption = element_text(hjust = 0.5))
+
+
+# Convertir a gráfico interactivo
+p_interactivo_4 <- ggplotly(p4, tooltip = c("gender", "year", "pace"))%>%
+  layout(yaxis = list(range = c(170, 325))) %>%
+  layout(yaxis = list(tickmode = "array", tickvals = c(175, 200, 225, 250, 275, 300), ticktext = c("2:55", "3:20", "3:45", "4:10", "4:35", "5:00")))
+
+p_interactivo_4
+```
+
+
+El primer maratón de Boston tuvo lugar en abril de 1897 y no sólo es el más antiguo de las “Six Majors” sino que también es el más antiguo de los maratones anuales que se celebran al rededor del mundo. En su origen, la distancia de la carrera era, oficialmente y según las normas, de “alrededor de 40 kilómetros”, aunque desde 1924 se ha adoptado la distancia de 42.195 kilómetros. No fue hasta 1972 que las mujeres tuvieron la ocasión de participar en el evento. 
+
+Dado que los primeros eventos de este maratón contaban con un recorrido más corto, se han tenido en cuenta para esta sección los ritmos medios (medidos en minutos y segundos que el atleta tarda en completar un kilómetro) de los ganadores y no el tiempo medio que estos han tardado en llegar a meta. 
+
+Respecto a la tendencia de los ritmos medios del ganador de cada edición, se observa como estos caen a lo largo del tiempo en ambas categorías. Llama la atención que la caída inicial de los tiempos medios de la categoría femenina durante los primeros años se produce de manera más abrupta que la que experimentaron los hombres anteriormente. Así mismo se observa como la tendencia en torno a los 3:00/km y los 3:30/km de ritmo medio se ha alcanzo ya desde principios de los años ochenta en ambas categorías. 
+
+---
+
+## Conclusiones
+
+Este análisis revela la evolución del maratón y la búsqueda incansable de la excelencia por parte de corredores de élite, desafiando las barreras temporales. Con cada nueva marca y récord superado, el maratón persiste como símbolo de perseverancia y un recordatorio inspirador de que siempre hay nuevos horizontes por explorar en la búsqueda incansable de la excelencia atlética.
+
+Al enfrentarme a la tarea de realizar este trabajo individual he podido experimentar, aún más si cabe, la versatilidad y el potencial de las herramientas con las que hemos trabajado a lo largo del curso. A pesar de haberme encontrado con ciertos desafíos, he disfrutado de este trabajo y me ha servido para reforzar los conocimientos adquiridos en esta asignatura.
+
+Espero que te haya gustado!!!
+
+Pd: Por si te interesa, este es el aftermovie del maratón Valencia 2023
+
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/9NR0vp3_njI" frameborder="0" allowfullscreen></iframe>
+
+
+## Referencias
+
+Aouita. (2023, 28 diciembre). El Maratón de Valencia se convierte en el séptimo major. [La Bolsa del Corredor](https://www.sport.es/labolsadelcorredor/el-maraton-de-valencia-se-convierte-en-el-septimo-world-marathon-major/#google_vignette)
+
+
+Pérez, I. (2019, 12 octubre). Eliud Kipchoge conquista un reto histórico: primer ser humano en bajar de dos horas en maratón. [Runner’s World](https://www.runnersworld.com/es/noticias-running/a29426722/kipchoge-baja-dos-horas-maraton-viena-historia/)
+
+
+Díaz, J. J., Renfree, A., Fernández-Ozcorta, E. J., Torres, M., & Santos-Concejero, J. (2019). [Pacing and Performance in the 6 World Marathon Majors](https://doi.org/10.3389/fspor.2019.00054)
+
+
+---
+
+
+----------------------
+
+<br>
+
+### Información sobre la sesión
+
+Abajo muestro mi entorno de trabajo y paquetes utilizados
+
+```{r}
+#| echo: false
+sessioninfo::session_info() %>% 
+  details::details(summary = 'current session info') 
+```
+
+
+
